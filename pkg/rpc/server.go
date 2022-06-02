@@ -2,9 +2,10 @@ package rpc
 
 import (
 	"context"
-	"net/http"
-
 	"github.com/NethermindEth/juno/internal/log"
+	"github.com/NethermindEth/juno/internal/services"
+	"github.com/NethermindEth/juno/pkg/common"
+	"net/http"
 )
 
 // Server represents the server structure
@@ -73,46 +74,79 @@ func (HandlerRPC) StarknetCall(
 	return []string{"Response", "of", "starknet_call"}, nil
 }
 
-// StarknetGetBlockByHash represent the handler for getting a block by
-// its hash.
-func (HandlerRPC) StarknetGetBlockByHash(
-	c context.Context, blockHash BlockHashOrTag,
-) (BlockResponse, error) {
-	// TODO See if is possible to support overhead without another method
-	return BlockResponse{BlockHash: string(blockHash)}, nil
+func getBlockByTag(ctx context.Context, blockTag BlockTag, scope RequestedScope) (BlockResponse, error) {
+	// TODO: Implement get block by tag
+	return BlockResponse{}, nil
+}
+
+func getBlockByHash(ctx context.Context, blockHash common.Felt, scope RequestedScope) (BlockResponse, error) {
+	log.Default.With("blockHash", blockHash, "scope", scope).Info("StarknetGetBlockByHash")
+	dbBlock := services.BlockService.GetBlockByHash(blockHash.Bytes())
+	response := BlockResponse{}
+	if dbBlock == nil {
+		// Return empty block if not found
+		return response, nil
+	}
+	response.fromDatabaseBlock(dbBlock)
+	response.ApplyTxScope(dbBlock.TxHashes, scope)
+	return response, nil
+}
+
+func getBlockByHashOrTag(ctx context.Context, blockHashOrTag BlockHashOrTag, scope RequestedScope) (BlockResponse, error) {
+	if hash, ok := blockHashOrTag.GetBlockHash(); ok {
+		return getBlockByHash(ctx, hash, scope)
+	}
+	if tag, ok := blockHashOrTag.GetTag(); ok {
+		return getBlockByTag(ctx, tag, scope)
+	}
+	// TODO: Send bad request error
+	return BlockResponse{}, nil
+}
+
+// StarknetGetBlockByHash represent the handler for getting a block by its hash.
+func (HandlerRPC) StarknetGetBlockByHash(ctx context.Context, blockHashOrTag BlockHashOrTag) (BlockResponse, error) {
+	return getBlockByHashOrTag(ctx, blockHashOrTag, ScopeTxnHash)
 }
 
 // StarknetGetBlockByHashOpt represent the handler for getting a block
 // by its hash.
-func (HandlerRPC) StarknetGetBlockByHashOpt(
-	c context.Context, blockHash BlockHashOrTag, requestedScope RequestedScope,
-) (BlockResponse, error) {
-	// TODO See if is possible to support overhead without another method
-	return BlockResponse{
-		BlockHash:  string(blockHash),
-		ParentHash: string(requestedScope),
-	}, nil
+func (HandlerRPC) StarknetGetBlockByHashOpt(ctx context.Context, blockHashOrTag BlockHashOrTag, scope RequestedScope) (BlockResponse, error) {
+	return getBlockByHashOrTag(ctx, blockHashOrTag, scope)
 }
 
-// type bNumber string `json:"int,int,omitempty"`
+func getBlockByNumber(ctx context.Context, blockNumber uint64, scope RequestedScope) (BlockResponse, error) {
+	log.Default.With("blockNumber", blockNumber, "scope", scope).Info("StarknetGetBlockNyNumber")
+	dbBlock := services.BlockService.GetBlockByNumber(blockNumber)
+	response := BlockResponse{}
+	if dbBlock == nil {
+		return response, nil
+	}
+	response.fromDatabaseBlock(dbBlock)
+	response.ApplyTxScope(dbBlock.TxHashes, scope)
+	return response, nil
+}
+
+func getBlockByNumberOrTag(ctx context.Context, blockNumberOrTag BlockNumberOrTag, scope RequestedScope) (BlockResponse, error) {
+	if blockNumber, ok := blockNumberOrTag.GetBlockNumber(); ok {
+		return getBlockByNumber(ctx, blockNumber, scope)
+	}
+	if tag, ok := blockNumberOrTag.GetTag(); ok {
+		return getBlockByTag(ctx, tag, scope)
+	}
+	// TODO: Send bad request error
+	return BlockResponse{}, nil
+}
 
 // StarknetGetBlockByNumber represent the handler for getting a block by
 // its number.
-func (HandlerRPC) StarknetGetBlockByNumber(
-	c context.Context, blockNumber interface{},
-) (BlockResponse, error) {
-	// TODO See if is possible to support overhead without another method
-	log.Default.With("Block Number", blockNumber).Info("Calling StarknetGetBlockByNumber")
-	return BlockResponse{}, nil
+func (HandlerRPC) StarknetGetBlockByNumber(ctx context.Context, blockNumberOrTag BlockNumberOrTag) (BlockResponse, error) {
+	return getBlockByNumberOrTag(ctx, blockNumberOrTag, ScopeTxnHash)
 }
 
 // StarknetGetBlockByNumberOpt represent the handler for getting a block
 // by its number.
-func (HandlerRPC) StarknetGetBlockByNumberOpt(
-	c context.Context, blockNumber interface{}, requestedScope RequestedScope,
-) (BlockResponse, error) {
-	// TODO See if is possible to support overhead without another method
-	return BlockResponse{}, nil
+func (HandlerRPC) StarknetGetBlockByNumberOpt(ctx context.Context, blockNumberOrTag BlockNumberOrTag, scope RequestedScope) (BlockResponse, error) {
+	return getBlockByNumberOrTag(ctx, blockNumberOrTag, scope)
 }
 
 // StarknetGetBlockTransactionCountByHash represent the handler for
